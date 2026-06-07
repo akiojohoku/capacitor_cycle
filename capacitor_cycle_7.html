@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>平行板コンデンサー サイクルシミュレーター</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f5f4f0;color:#1a1a18;padding:10px;display:flex;flex-direction:column;height:100vh}
+.grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;flex:1;min-height:0}
+.card{background:#fff;border:0.5px solid rgba(0,0,0,0.12);border-radius:12px;padding:12px 16px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.sec{font-size:14px;font-weight:600;color:#5f5e5a;letter-spacing:.04em;margin-bottom:8px;flex-shrink:0}
+.slrow{display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-shrink:0}
+.slrow label{font-size:18px;color:#5f5e5a;min-width:28px}
+.slrow input[type=range]{flex:1;accent-color:#378ADD;height:6px}
+.slrow span{font-size:20px;font-weight:700;min-width:80px;text-align:right}
+.fixed-params{display:flex;gap:24px;margin-bottom:14px;font-size:18px;color:#5f5e5a;flex-shrink:0;align-items:baseline}
+.fixed-params .fp-label{font-size:16px;color:#888780;margin-right:2px}
+.fixed-params .fp-val{font-weight:700;color:#1a1a18;font-size:22px}
+.derived{font-size:16px;color:#5f5e5a;margin-top:10px;flex-shrink:0;line-height:2.2}
+.derived strong{color:#1a1a18;font-size:18px}
+.state-tabs{display:flex;gap:6px;margin-bottom:8px;flex-shrink:0}
+.stab{flex:1;border:0.5px solid rgba(0,0,0,0.2);background:transparent;border-radius:8px;padding:6px 0;font-size:15px;cursor:pointer;color:#5f5e5a;text-align:center;transition:background .12s;font-family:inherit;line-height:1.5}
+.stab.on{background:#e6f1fb;color:#185fa5;border-color:#85b7eb;font-weight:600}
+.vis-row{display:flex;gap:4px;align-items:center;flex:1;min-height:0}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px;flex:0 0 160px;align-content:start}
+.mc{background:#f5f4f0;border-radius:8px;padding:7px 10px}
+.mc-l{font-size:12px;color:#5f5e5a;margin-bottom:3px}
+.mc-v{font-size:18px;font-weight:600}
+.mc-u{font-size:12px;color:#5f5e5a}
+.law{font-size:15px;color:#5f5e5a;margin-bottom:4px;flex-shrink:0}
+.unit-note{font-size:13px;color:#5f5e5a;margin-bottom:6px;flex-shrink:0}
+table{width:100%;border-collapse:collapse;table-layout:fixed;flex-shrink:0}
+th{font-size:15px;font-weight:600;color:#5f5e5a;padding:7px 4px;border-bottom:0.5px solid rgba(0,0,0,0.15);text-align:center;line-height:1.4}
+th .unit{font-size:11px;font-weight:400;display:block;color:#888780}
+td{font-size:15px;padding:7px 4px;border-bottom:0.5px solid rgba(0,0,0,0.1);text-align:center;color:#1a1a18}
+.pos{color:#3b6d11}.neg{color:#a32d2d}
+.total-row td{font-weight:600;border-top:0.5px solid rgba(0,0,0,0.2);border-bottom:none}
+.highlight{background:#eaf3de;border-radius:8px;padding:8px 12px;font-size:14px;margin-top:10px;color:#27500a;flex-shrink:0;line-height:1.6}
+.chart-wrap{flex:1;min-height:0;position:relative}
+.tot-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="grid">
+
+<!-- 左上: パラメーター -->
+<div class="card">
+  <div class="sec">パラメーター</div>
+  <div class="fixed-params">
+    <div><span class="fp-label">V：</span><span class="fp-val">V</span></div>
+    <div><span class="fp-label">Q：</span><span class="fp-val">Q₀</span></div>
+    <div><span class="fp-label">C：</span><span class="fp-val">C₀</span></div>
+  </div>
+  <div class="slrow">
+    <label>d₂</label>
+    <input type="range" id="sd2" min="2" max="6" value="5" step="1">
+    <span id="vd2-lbl">2 d₁</span>
+  </div>
+  <div class="derived">
+    Q₃ = <strong id="q3-val">—</strong> Q₀　
+    V₂ = <strong id="v2-val">—</strong> V　
+    V₄ = <strong id="v4-val">—</strong> V
+  </div>
+</div>
+
+<!-- 右上: 状態ビューア -->
+<div class="card">
+  <div class="sec">状態</div>
+  <div class="state-tabs">
+    <button class="stab on" onclick="sel(0)">I<br><small>d₁, V</small></button>
+    <button class="stab" onclick="sel(1)">II<br><small>d₂, V₂</small></button>
+    <button class="stab" onclick="sel(2)">III<br><small>d₂, V</small></button>
+    <button class="stab" onclick="sel(3)">IV<br><small>d₁, V₄</small></button>
+  </div>
+  <div class="vis-row">
+    <svg id="csvg" viewBox="0 0 260 210" style="flex:1;height:100%">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <g id="cap-g"></g>
+    </svg>
+    <div class="metrics">
+      <div class="mc"><div class="mc-l">Q</div><div class="mc-v" id="mQ">—</div><div class="mc-u">Q₀</div></div>
+      <div class="mc"><div class="mc-l">E</div><div class="mc-v" id="mE">—</div><div class="mc-u">V/d₁</div></div>
+      <div class="mc"><div class="mc-l">電位差</div><div class="mc-v" id="mVab">—</div><div class="mc-u">V</div></div>
+      <div class="mc"><div class="mc-l">C</div><div class="mc-v" id="mC">—</div><div class="mc-u">C₀</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 左下: エネルギー収支 -->
+<div class="card">
+  <div class="sec">区間別エネルギー収支</div>
+  <div class="law">W電池 + W外力 = ΔU + 熱J</div>
+  <div class="unit-note">単位：すべて <strong>½Q₀V</strong> の倍数</div>
+  <table>
+    <thead>
+      <tr>
+        <th>区間</th>
+        <th>W電池<span class="unit">[½Q₀V]</span></th>
+        <th>W外力<span class="unit">[½Q₀V]</span></th>
+        <th>ΔU<span class="unit">[½Q₀V]</span></th>
+        <th>熱J<span class="unit">[½Q₀V]</span></th>
+      </tr>
+    </thead>
+    <tbody id="etbody"></tbody>
+  </table>
+  <div class="highlight" id="eq-highlight"></div>
+</div>
+
+<!-- 右下: エネルギー棒グラフ -->
+<div class="card">
+  <div class="sec">静電エネルギー U（全状態）</div>
+  <div class="chart-wrap">
+    <canvas id="uchart" role="img">状態I〜IVの静電エネルギー比較</canvas>
+  </div>
+  <div class="tot-grid">
+    <div class="mc"><div class="mc-l">W電池 合計 [½Q₀V]</div><div class="mc-v" id="tot-wb">—</div></div>
+    <div class="mc"><div class="mc-l">W外力 合計 [½Q₀V]</div><div class="mc-v pos" id="tot-wf">—</div></div>
+    <div class="mc"><div class="mc-l">ΔU 合計 [½Q₀V]</div><div class="mc-v" id="tot-du">—</div></div>
+    <div class="mc"><div class="mc-l">熱J 合計 [½Q₀V]</div><div class="mc-v pos" id="tot-J">—</div></div>
+  </div>
+</div>
+
+</div>
+<script>
+const COLS=['#378ADD','#639922','#D85A30','#7F77DD'];
+const CHART_LABELS=['状態 I','状態 II','状態 III','状態 IV'];
+let cur=0, chart=null;
+const STEPS={2:1/2,3:2/3,4:1,5:2,6:3};
+const STEP_LABELS={2:'1/2 d₁',3:'2/3 d₁',4:'d₁',5:'2 d₁',6:'3 d₁'};
+const N_BASE=6;
+// 状態I(0)とIII(2)はスイッチ閉（電池接続）
+const SW_CLOSED=[true,false,true,false];
+
+function toFrac(x){
+  if(Math.abs(x)<0.0001)return'0';
+  const tol=0.005;
+  for(let d=1;d<=20;d++){const n=Math.round(x*d);if(Math.abs(n/d-x)<tol)return n===d?'1':`${n}/${d}`;}
+  return x.toFixed(3);
+}
+const fss=v=>{
+  if(Math.abs(v)<0.0001)return'0';
+  const s=toFrac(Math.abs(v));
+  return v>0?`<span class="pos">+${s}</span>`:`<span class="neg">−${s}</span>`;
+};
+
+function calcAll(r){
+  const Q3=1/r,V2=r,V4=1/r;
+  const UI=0.5,UII=0.5*r,UIII=0.5/r,UIV=0.5/(r*r);
+  const ss=[
+    {Q:1,  Vab:1,  d:1,E:1,  C:1,  U:UI,  Qlabel:'Q₀'},
+    {Q:1,  Vab:V2, d:r,E:1,  C:1/r,U:UII, Qlabel:'Q₀'},
+    {Q:Q3, Vab:1,  d:r,E:1/r,C:Q3, U:UIII,Qlabel:`${toFrac(Q3)}Q₀`},
+    {Q:Q3, Vab:V4, d:1,E:Q3, C:Q3, U:UIV, Qlabel:`${toFrac(Q3)}Q₀`},
+  ];
+  const dU12=UII-UI,  Wb12=0,      Wf12=dU12,J12=0;
+  const dU23=UIII-UII,Wb23=(Q3-1), Wf23=0,   J23=Wb23-dU23;
+  const dU34=UIV-UIII,Wb34=0,      Wf34=dU34,J34=0;
+  const dU41=UI-UIV,  Wb41=(1-Q3), Wf41=0,   J41=Wb41-dU41;
+  return{
+    ss,
+    ts:[
+      {l:'I → II',   dU:dU12,Wb:Wb12,Wf:Wf12,J:J12},
+      {l:'II → III', dU:dU23,Wb:Wb23,Wf:Wf23,J:J23},
+      {l:'III → IV', dU:dU34,Wb:Wb34,Wf:Wf34,J:J34},
+      {l:'IV → I',   dU:dU41,Wb:Wb41,Wf:Wf41,J:J41},
+    ]
+  };
+}
+
+function drawCapacitor(s){
+  // viewBox: 0 0 260 210
+  // 極板エリア: x=70〜220（幅150）
+  const PW=150, PH=14, PX=70;
+  const VBH=210;
+  const dMin=0.5,dMax=3,gapMin=18,gapMax=124;
+  const gapPx=gapMin+(s.d-dMin)/(dMax-dMin)*(gapMax-gapMin);
+  const topY=(VBH-PH-gapPx-PH)/2;
+  const yA=topY, yB=topY+PH+gapPx, cy=topY+PH+gapPx/2;
+
+  // 電気力線
+  const nLines=Math.max(1,Math.round(s.Q*N_BASE));
+  let lines='';
+  for(let i=0;i<nLines;i++){
+    const x=PX+10+(PW-20)/(nLines+1)*(i+1);
+    lines+=`<line x1="${x}" y1="${yA+PH}" x2="${x}" y2="${yB}"
+      stroke="#6aaee8" stroke-width="2" opacity="0.85" marker-end="url(#arr)"/>`;
+  }
+
+  // 極板
+  const plateA=`<rect x="${PX}" y="${yA}" width="${PW}" height="${PH}" rx="3" fill="#5b9bd5" opacity=".9"/>`;
+  const plateB=`<rect x="${PX}" y="${yB}" width="${PW}" height="${PH}" rx="3" fill="#d9726b" opacity=".9"/>`;
+
+  // 電荷ラベル
+  const qA=`<text x="${PX+6}" y="${yA-5}" font-size="14" fill="#1a5fa8" font-weight="700">+${s.Qlabel}</text>`;
+  const qB=`<text x="${PX+6}" y="${yB+PH+17}" font-size="14" fill="#a32d2d" font-weight="700">−${s.Qlabel}</text>`;
+
+  // 右側の寸法線
+  const dx=PX+PW+10;
+  const dLabel=['d₁','d₂','d₂','d₁'][cur];
+  const dimLine=`<line x1="${dx}" y1="${yA+PH}" x2="${dx}" y2="${yB}"
+    stroke="#aaa" stroke-width="1" stroke-dasharray="3,2"
+    marker-start="url(#arr)" marker-end="url(#arr)"/>`;
+  const dimText=`<text x="${dx+6}" y="${cy+5}" font-size="13" fill="#888">${dLabel}</text>`;
+
+  // 電圧ラベルと矢印（画像スタイル）
+  const vLabel=['V','V₂','V','V₄'][cur];
+  const isClosed=SW_CLOSED[cur];
+
+  // 矢印のx座標・上下端
+  const arrX = isClosed ? 46 : 30;
+  const arrTop = yA;
+  const arrBot = yB + PH;
+  const arrMid = (arrTop + arrBot) / 2;
+
+  // 上横棒 ＋ 縦線 ＋ 下向き矢印三角
+  const vArrow=
+    `<line x1="${arrX-8}" y1="${arrTop}" x2="${arrX+8}" y2="${arrTop}"
+      stroke="#1a5fa8" stroke-width="3" stroke-linecap="round"/>` +
+    `<line x1="${arrX}" y1="${arrTop}" x2="${arrX}" y2="${arrBot-4}"
+      stroke="#1a5fa8" stroke-width="3"/>` +
+    `<polygon points="${arrX},${arrBot} ${arrX-7},${arrBot-14} ${arrX+7},${arrBot-14}"
+      fill="#1a5fa8"/>`;
+
+  const vText=`<text x="${arrX+14}" y="${arrMid+9}"
+    font-size="22" fill="#1a5fa8" font-weight="800" font-style="italic">${vLabel}</text>`;
+
+  // ===== 電池回路（スイッチ閉のとき）=====
+  // 構造：
+  //   極板A左端(PX, yA+PH/2) → 上配線 → 電池 → 上配線 → 極板Aへ接続
+  //   極板B左端(PX, yB+PH/2) → 下配線 → 電池下端へ
+  // 電池はコンデンサー左側に縦に置く
+  // 回路線: 極板Aの上端左 → 左上コーナー → 電池上端
+  //         電池下端 → 左下コーナー → 極板Bの下端左
+  let circuit='';
+  if(isClosed){
+    const wireX = 12;           // 回路の左端X
+    const topWireY = yA - 2;    // 上配線Y（極板Aの上辺）
+    const botWireY = yB + PH + 2; // 下配線Y（極板Bの下辺）
+
+    // 電池の位置（縦中央）
+    const batCX = wireX;        // 電池の中心X
+    const batMidY = (topWireY + botWireY) / 2;
+    const batH = 32;            // 電池の全高
+    const batTopY = batMidY - batH/2;
+    const batBotY = batMidY + batH/2;
+
+    // 上の配線: 極板A左端 → 左上コーナー → 電池上端
+    circuit +=
+      // 極板A左端から左へ
+      `<line x1="${PX}" y1="${topWireY}" x2="${wireX}" y2="${topWireY}"
+        stroke="#1a1a18" stroke-width="2"/>` +
+      // 左端を電池上まで下ろす
+      `<line x1="${wireX}" y1="${topWireY}" x2="${wireX}" y2="${batTopY}"
+        stroke="#1a1a18" stroke-width="2"/>` +
+      // 下の配線: 電池下端 → 左下コーナー → 極板B左端
+      `<line x1="${wireX}" y1="${batBotY}" x2="${wireX}" y2="${botWireY}"
+        stroke="#1a1a18" stroke-width="2"/>` +
+      `<line x1="${wireX}" y1="${botWireY}" x2="${PX}" y2="${botWireY}"
+        stroke="#1a1a18" stroke-width="2"/>`;
+
+    // 電池記号（上が＋：長線、下が−：短線）
+    // ＋側（上）: 長い横棒
+    circuit +=
+      `<line x1="${batCX-10}" y1="${batTopY+6}" x2="${batCX+10}" y2="${batTopY+6}"
+        stroke="#1a1a18" stroke-width="3" stroke-linecap="round"/>` +
+      // ＋記号
+      `<text x="${batCX+13}" y="${batTopY+11}" font-size="13" fill="#1a1a18" font-weight="700">+</text>` +
+      // −側（下）: 短い横棒
+      `<line x1="${batCX-6}" y1="${batBotY-6}" x2="${batCX+6}" y2="${batBotY-6}"
+        stroke="#1a1a18" stroke-width="2" stroke-linecap="round"/>` +
+      // −記号
+      `<text x="${batCX+9}" y="${batBotY-1}" font-size="13" fill="#1a1a18" font-weight="700">−</text>`;
+  }
+
+  document.getElementById('cap-g').innerHTML =
+    lines + plateA + plateB + qA + qB + vArrow + vText + circuit + dimLine + dimText;
+}
+
+function updateChart(ss){
+  const Us=ss.map(s=>s.U);
+  const bgColors=COLS.map((c,i)=>i===cur?c+'cc':c+'44');
+  const borderColors=COLS.map((c,i)=>i===cur?c:c+'88');
+  const borderWidths=COLS.map((_,i)=>i===cur?2:1);
+  if(!chart){
+    chart=new Chart(document.getElementById('uchart'),{
+      type:'bar',
+      data:{labels:CHART_LABELS,datasets:[{data:Us,backgroundColor:bgColors,borderColor:borderColors,borderWidth:borderWidths,borderRadius:4}]},
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`U = ${toFrac(c.parsed.y)} × ½Q₀V`}}},
+        scales:{
+          x:{grid:{display:false},ticks:{font:{size:14},color:'#888780'}},
+          y:{beginAtZero:true,grid:{color:'rgba(136,135,128,0.15)'},
+            ticks:{font:{size:13},color:'#888780',callback:v=>toFrac(v),maxTicksLimit:6},
+            title:{display:true,text:'U  [× ½Q₀V]',font:{size:13},color:'#888780'}}
+        },
+        animation:{duration:200}
+      }
+    });
+  }else{
+    chart.data.datasets[0].data=Us;
+    chart.data.datasets[0].backgroundColor=bgColors;
+    chart.data.datasets[0].borderColor=borderColors;
+    chart.data.datasets[0].borderWidth=borderWidths;
+    chart.update();
+  }
+}
+
+function render(){
+  const step=+document.getElementById('sd2').value;
+  const r=STEPS[step];
+  document.getElementById('vd2-lbl').textContent=STEP_LABELS[step];
+  document.getElementById('q3-val').textContent=toFrac(1/r);
+  document.getElementById('v2-val').textContent=toFrac(r);
+  document.getElementById('v4-val').textContent=toFrac(1/r);
+  const{ss,ts}=calcAll(r);
+  const s=ss[cur];
+  drawCapacitor(s);
+  updateChart(ss);
+  document.getElementById('mQ').textContent=toFrac(s.Q);
+  document.getElementById('mE').textContent=toFrac(s.E);
+  document.getElementById('mVab').textContent=toFrac(s.Vab);
+  document.getElementById('mC').textContent=toFrac(s.C);
+  const totWb=ts.reduce((a,t)=>a+t.Wb,0);
+  const totWf=ts.reduce((a,t)=>a+t.Wf,0);
+  const totDu=ts.reduce((a,t)=>a+t.dU,0);
+  const totJ =ts.reduce((a,t)=>a+t.J ,0);
+  document.getElementById('etbody').innerHTML=
+    ts.map((t,i)=>
+      `<tr><td style="color:${COLS[i]};font-weight:700">${t.l}</td><td>${fss(t.Wb)}</td><td>${fss(t.Wf)}</td><td>${fss(t.dU)}</td><td>${fss(t.J)}</td></tr>`
+    ).join('')+
+    `<tr class="total-row"><td style="color:#5f5e5a">合計</td>`+
+    ['Wb','Wf','dU','J'].map(k=>`<td>${fss(ts.reduce((a,t)=>a+t[k],0))}</td>`).join('')+`</tr>`;
+  document.getElementById('tot-wb').textContent=toFrac(totWb);
+  document.getElementById('tot-wf').textContent=toFrac(totWf);
+  document.getElementById('tot-du').textContent=toFrac(totDu);
+  document.getElementById('tot-J').textContent=toFrac(totJ);
+  const ok=Math.abs(totWb)<0.0001&&Math.abs(totDu)<0.0001&&Math.abs(totWf-totJ)<0.0001;
+  document.getElementById('eq-highlight').textContent=ok
+    ?`W外力合計 = 熱J合計 = ${toFrac(totWf)} × ½Q₀V（W電池=0、ΔU=0 より成立）`
+    :`W外力 ${toFrac(totWf)}、熱J ${toFrac(totJ)}（不一致）`;
+  document.querySelectorAll('.stab').forEach((b,i)=>b.classList.toggle('on',i===cur));
+}
+function sel(i){cur=i;render();}
+document.getElementById('sd2').addEventListener('input',render);
+render();
+</script>
+</body>
+</html>
